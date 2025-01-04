@@ -1,13 +1,13 @@
 from langchain_community.vectorstores import Chroma
-from langchain_community.chat_models import ChatOllama
+from langchain_ollama import ChatOllama
 from langchain_community.embeddings import FastEmbedEmbeddings
 from langchain.schema.output_parser import StrOutputParser
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema.runnable import RunnablePassthrough
 from langchain.prompts import PromptTemplate
-from langchain.vectorstores.utils import filter_complex_metadata
-
+from langchain_community.vectorstores.utils import filter_complex_metadata
+import chromadb
 
 class ChatPDF:
     vector_store = None
@@ -29,23 +29,42 @@ class ChatPDF:
         )
 
     def ingest(self, pdf_file_path: str):
-        docs = PyPDFLoader(file_path=pdf_file_path).load()
-        chunks = self.text_splitter.split_documents(docs)
-        chunks = filter_complex_metadata(chunks)
+        try:
+            # Load and split the documents
+            docs = PyPDFLoader(file_path=pdf_file_path).load()
+            chunks = self.text_splitter.split_documents(docs)
+            chunks = filter_complex_metadata(chunks)
 
-        vector_store = Chroma.from_documents(documents=chunks, embedding=FastEmbedEmbeddings())
-        self.retriever = vector_store.as_retriever(
-            search_type="similarity_score_threshold",
-            search_kwargs={
-                "k": 3,
-                "score_threshold": 0.5,
-            },
-        )
+            # Log the document chunks for debugging
+            print(f"Document chunks: {chunks}")
 
-        self.chain = ({"context": self.retriever, "question": RunnablePassthrough()}
-                      | self.prompt
-                      | self.model
-                      | StrOutputParser())
+            # Initialize the vector store
+            vector_store = Chroma.from_documents(
+                documents=chunks, 
+                embedding=FastEmbedEmbeddings(),
+                client_settings={"tenant": "default_tenant"}  # Adjust this if needed
+            )
+            
+            # Clear the system cache after using Chroma
+            chromadb.api.client.SharedSystemClient.clear_system_cache()
+
+            # Setup retriever
+            self.retriever = vector_store.as_retriever(
+                search_type="similarity_score_threshold",
+                search_kwargs={
+                    "k": 3,
+                    "score_threshold": 0.5,
+                },
+            )
+
+            # Setup the chain
+            self.chain = ({"context": self.retriever, "question": RunnablePassthrough()}
+                        | self.prompt
+                        | self.model
+                        | StrOutputParser())
+
+        except Exception as e:
+            print(f"Error during PDF ingestion: {str(e)}")
 
     def ask(self, query: str):
         if not self.chain:
