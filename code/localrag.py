@@ -36,3 +36,24 @@ def get_context(rewritten_input, vault_embeddings, vault_content, top_k=3):
     relevant_context = [vault_content[idx].strip() for idx in top_indices]
     return relevant_context
 
+def rewrite_query(user_input_json, conversation_history, ollama_model):
+    user_input = json.loads(user_input_json)["Query"]
+    context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-2:]])
+    prompt = f"""Rewrite the following query by incorporating relevant context from the conversation history.
+    The rewritten query should:
+    
+    - Preserve the core intent and meaning of the original query
+    - Expand and clarify the query to make it more specific and informative for retrieving relevant context
+    - Avoid introducing new topics or queries that deviate from the original query
+    - DONT EVER ANSWER the Original query, but instead focus on rephrasing and expanding it into a new query
+    - Return the output as plain text, without any additional formatting
+    
+    Return ONLY the rewritten query text, without any additional formatting or explanations.
+    
+    Conversation History:
+    {context}
+    
+    Original query: [{user_input}]
+    
+    Rewritten query: 
+    """
