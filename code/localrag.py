@@ -61,7 +61,7 @@ def rewrite_query(user_input_json, conversation_history, ollama_model):
         model=ollama_model,
         messages=[{"role": "system", "content": prompt}],
         max_tokens=200,
-        n=1m
+        n=1,
         temperature=0.1,
     )
     rewritten_query = response.choices[0].message.content.strip()
@@ -155,5 +155,5 @@ while True:
     if user_input.lower() == 'quit':
         break
     
-    response = ollama_chat(user_input, system_message, vault_embeddings_tensor, vault_content, args.model, conversation_history)
+    response = gemma_chat(user_input, system_message, vault_embeddings_tensor, vault_content, args.model, conversation_history)
     print(NEON_GREEN + "Response: \n\n" + response + RESET_COLOR)
