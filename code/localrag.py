@@ -18,3 +18,21 @@ def open_file(filepath):
         return file.read()
     
 # Function to get the relevant context from the vault based on the user input
+def get_context(rewritten_input, vault_embeddings, vault_content, top_k=3):
+    if vault_embeddings.nelement() == 0: # Check if the tensor is empty
+        return []
+    
+    # Encode the rewritten input
+    input_embedding = ollama.embeddings(model='mxbai-embed-large', prompt=rewritten_input)["embedding"]
+    # Compute the similarity between input and vault embeddings
+    cos_scores = torch.cosine_similarity(torch.tensor(input_embedding).unsqueeze(0), vault_embeddings)
+    # Adjust top k based on available scores
+    top_k = min(top_k, len(cos_scores))
+    
+    # Sort the scores and get the top-k indices
+    top_indices = torch.topk(cos_scores, k=top_k)[1].tolist()
+    
+    # Get the corresponding context from the vault
+    relevant_context = [vault_content[idx].strip() for idx in top_indices]
+    return relevant_context
+
