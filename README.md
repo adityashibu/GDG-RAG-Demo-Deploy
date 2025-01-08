@@ -1,10 +1,5 @@
 # GDG-RAG-Demo
 
-![Python 3.9](https://img.shields.io/badge/Python_3.9-${{ env.python-3.9 }}-brightgreen)
-![Python 3.10](https://img.shields.io/badge/Python_3.10-${{ env.python-3.10 }}-brightgreen)
-![Python 3.11](https://img.shields.io/badge/Python_3.11-${{ env.python-3.11 }}-brightgreen)
-![Python 3.12](https://img.shields.io/badge/Python_3.12-${{ env.python-3.12 }}-brightgreen)
-
 # Instructions
 
 ## Our environment setup
