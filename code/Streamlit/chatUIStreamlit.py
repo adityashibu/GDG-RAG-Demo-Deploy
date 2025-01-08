@@ -110,7 +110,7 @@ def get_context(rewritten_input, vault_embeddings, vault_content, top_k=3):
         return []
 
     # Encode the rewritten input
-    input_embedding = ollama.embeddings(model='mxbai-embed-large', prompt=rewritten_input)["embedding"]
+    input_embedding = ollama.embeddings(model='nomic-embed-text', prompt=rewritten_input)["embedding"]
 
     # Compute the similarity between input and vault embeddings
     cos_scores = torch.cosine_similarity(torch.tensor(input_embedding).unsqueeze(0), vault_embeddings)
@@ -212,7 +212,7 @@ if os.path.exists("vault.txt"):
 # Generate embeddings for the vault content using Ollama
 vault_embeddings = []
 for content in vault_content:
-    response = ollama.embeddings(model='mxbai-embed-large', prompt=content)
+    response = ollama.embeddings(model='nomic-embed-text', prompt=content)
     vault_embeddings.append(response["embedding"])
 
 # Convert to tensor
