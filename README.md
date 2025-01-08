@@ -52,3 +52,10 @@ RAG demo for GDG Heriot-Watt University, Dubai
       2. **`chatUIStreamlit.py`:** This is the final UI composing of a chat-like UI for interacting with the LLM along with a sidebar where you can upload files
     - **`upload.py`:** Run this first to upload your files using a Tkinter GUI, this shall be used along with `localrag.py` so you can chat with your documents from the terminal
     - **`localrag.py`:** Run this after running `upload.py` to chat with the document you have uploaded
+
+## Reach Out
+
+Have any doubts? Feel free to reach out to us at:
+
+- Aditya S (as2397@hw.ac.uk)
+- Jonathan (jjt2002@hw.ac.uk)
