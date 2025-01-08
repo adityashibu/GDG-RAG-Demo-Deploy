@@ -1,6 +1,11 @@
 # GDG-RAG-Demo
 
+## Supported Python versions
+
 ![Python 3.9](https://github.com/jonathanjthomas/GDG-RAG-Demo/actions/workflows/python-3.9.yml/badge.svg)
+![Python 3.10](https://github.com/jonathanjthomas/GDG-RAG-Demo/actions/workflows/python-3.10.yml/badge.svg)
+![Python 3.11](https://github.com/jonathanjthomas/GDG-RAG-Demo/actions/workflows/python-3.11.yml/badge.svg)
+![Python 3.12](https://github.com/jonathanjthomas/GDG-RAG-Demo/actions/workflows/python-3.12.yml/badge.svg)
 
 # Instructions
 
