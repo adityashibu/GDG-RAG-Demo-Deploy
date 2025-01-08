@@ -40,6 +40,15 @@ RAG demo for GDG Heriot-Watt University, Dubai
 ## File Structure
 
 - **Test Folder**
+
   - The test folder contains:
     - **File Upload Test:** The files here were test files for checking if the file upload functions were working, feel free to run these files to see it for yourself
     - **Ollama Test:** These python files were to check if the connection with the Ollama server was set up, again feel free to run these to troubleshoot any problems you might be facing
+
+- **Code**
+  - The folder contains:
+    - **Streamlit:** All the files here set up a streamlit UI for interacting with the LLM
+      1. **`ContextStreamlit.py`:** sets up the Streamlit UI to show how the system retrieves the context for a given input
+      2. **`chatUIStreamlit.py`:** This is the final UI composing of a chat-like UI for interacting with the LLM along with a sidebar where you can upload files
+    - **`upload.py`:** Run this first to upload your files using a Tkinter GUI, this shall be used along with `localrag.py` so you can chat with your documents from the terminal
+    - **`localrag.py`:** Run this after running `upload.py` to chat with the document you have uploaded
