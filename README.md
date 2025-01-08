@@ -38,3 +38,8 @@ RAG demo for GDG Heriot-Watt University, Dubai
   ```
 
 ## File Structure
+
+- **Test Folder**
+  - The test folder contains:
+    - **File Upload Test:** The files here were test files for checking if the file upload functions were working, feel free to run these files to see it for yourself
+    - **Ollama Test:** These python files were to check if the connection with the Ollama server was set up, again feel free to run these to troubleshoot any problems you might be facing
