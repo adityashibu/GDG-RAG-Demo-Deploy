@@ -16,19 +16,25 @@ RAG demo for GDG Heriot-Watt University, Dubai
 
 - Make sure you have Python and Git installed on your system
 - Clone the repository on to your local machine using Git
-    ```shell
-    git clone https://github.com/jonathanjthomas/GDG-RAG-Demo.git
-    ```
+  ```shell
+  git clone https://github.com/jonathanjthomas/GDG-RAG-Demo.git
+  ```
 - Set up a virtual environment using the below command
   ```python
   python -m venv venv
   ```
 - Activate your virtual environment using
-    - Windows
-        ```python
-        venv\Scripts\Activate
-        ```
-    - Linux and MacOS
-         ```python
-        source venv/bin/activate
-        ```
+  - Windows
+    ```python
+    venv\Scripts\Activate
+    ```
+  - Linux and MacOS
+    ```python
+    source venv/bin/activate
+    ```
+- Install all the required libraries and dependencies
+  ```python
+  pip install -r requirements.txt
+  ```
+
+## File Structure
