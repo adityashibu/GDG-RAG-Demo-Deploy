@@ -1,5 +1,7 @@
 # GDG-RAG-Demo
 
+![Python 3.9](https://github.com/jonathanjthomas/GDG-RAG-Demo/actions/workflows/python-3.9.yml/badge.svg)
+
 # Instructions
 
 ## Our environment setup
