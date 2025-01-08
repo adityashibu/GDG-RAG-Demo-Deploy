@@ -111,9 +111,11 @@ def get_context(rewritten_input, vault_embeddings, vault_content, top_k=3):
 
     # Encode the rewritten input
     input_embedding = ollama.embeddings(model='mxbai-embed-large', prompt=rewritten_input)["embedding"]
+
     # Compute the similarity between input and vault embeddings
     cos_scores = torch.cosine_similarity(torch.tensor(input_embedding).unsqueeze(0), vault_embeddings)
-    # Adjust top k based on available scores
+    
+    # Adjust top k based to ensure it is not more than number of availabl scores
     top_k = min(top_k, len(cos_scores))
 
     # Sort the scores and get the top-k indices
@@ -177,6 +179,7 @@ def gemma_chat(user_input, system_message, vault_embeddings, vault_content, olla
         context_str = "\n".join(relevant_context)
         user_input_with_context = user_input + "\n\nRelevant Context:\n" + context_str
 
+    # Update the last user message with the relevant context retrieved 
     conversation_history[-1]["content"] = user_input_with_context
 
     messages = [
@@ -197,7 +200,7 @@ def gemma_chat(user_input, system_message, vault_embeddings, vault_content, olla
 # Configuration for the Ollama API client
 client = OpenAI(
     base_url='http://localhost:11434/v1',
-    api_key='llama3'
+    api_key='gemma2'
 )
 
 # Load the vault content
@@ -242,7 +245,7 @@ if json_file is not None:
 
 # Sidebar customization
 st.sidebar.title("Settings")
-model_option = st.sidebar.selectbox("Select Model", ["gemma2", "mxbai-embed-large"], index=0)
+model_option = st.sidebar.selectbox("Select Model", ["gemma2"], index=0)
 top_k = st.sidebar.slider("Top K Context", 1, 5, 3)  # Top K context to retrieve
 
 # Default system message
