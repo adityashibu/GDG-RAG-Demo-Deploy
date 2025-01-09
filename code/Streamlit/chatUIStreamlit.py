@@ -1,7 +1,3 @@
-import torch
-import ollama
-from openai import OpenAI
-import json
 import streamlit as st
 import os
 import tempfile
@@ -11,7 +7,10 @@ from uuid import uuid4
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredMarkdownLoader, JSONLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import OllamaEmbeddings, ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
+
+
 
 
 # ---------------------------- 1 - Data Ingestion ----------------------------
@@ -77,12 +76,12 @@ def add_to_vector_store(file, vector_store, chunk_size=256, chunk_overlap=100):
 # ---------------------------- 2 - Query Processing ----------------------------
 
 # Function to get the relevant context from the vault based on the user input
-def get_context(rewritten_input, vault_embeddings, vault_content, top_k=3):
+def get_context(query, vault_embeddings, vault_content, top_k=3):
     if vault_embeddings.nelement() == 0:  # Check if the tensor is empty
         return []
 
     # Encode the rewritten input
-    input_embedding = ollama.embeddings(model='nomic-embed-text', prompt=rewritten_input)["embedding"]
+    input_embedding = ollama.embeddings(model='nomic-embed-text', prompt=query)["embedding"]
 
     # Compute the similarity between input and vault embeddings
     cos_scores = torch.cosine_similarity(torch.tensor(input_embedding).unsqueeze(0), vault_embeddings)
@@ -97,87 +96,113 @@ def get_context(rewritten_input, vault_embeddings, vault_content, top_k=3):
     relevant_context = [vault_content[idx].strip() for idx in top_indices]
     return relevant_context
 
-def rewrite_query(user_input_json, conversation_history, ollama_model):
-    user_input = json.loads(user_input_json)["Query"]
+# Function to rewrite the user's query based on recent conversation history
+def rewrite_query(user_query, llm, conversation_history):
+
+    # Get the last two messages from the conversation history
     context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-2:]])
-    prompt = f"""Rewrite the following query by incorporating relevant context from the conversation history.
-    The rewritten query should:
-    
-    - Preserve the core intent and meaning of the original query
-    - Expand and clarify the query to make it more specific and informative for retrieving relevant context
-    - Avoid introducing new topics or queries that deviate from the original query
-    - DONT EVER ANSWER the Original query, but instead focus on rephrasing and expanding it into a new query
-    - Return the output as plain text, without any additional formatting
-    
-    Return ONLY the rewritten query text, without any additional formatting or explanations.
-    
-    Conversation History:
-    {context}
-    
-    Original query: [{user_input}]
-    
-    Rewritten query: 
-    """
-    response = client.chat.completions.create(
-        model=ollama_model,
-        messages=[{"role": "system", "content": prompt}],
-        max_tokens=200,
-        n=1,
-        temperature=0.1,
-    )
-    rewritten_query = response.choices[0].message.content.strip()
-    return json.dumps({"Rewritten Query": rewritten_query})
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You are a helpful assistant that rewrites user query.",
+            ),
+            (
+                "human", 
+             """Rewrite the following user query by incorporating relevant context from the last two messages of the conversation history.
+                The rewritten query should:
+
+                - Preserve the core intent and meaning of the original query
+                - Expand and clarify the query to make it more specific and informative for retrieving relevant context
+                - Avoid introducing new topics or queries that deviate from the original query
+                - Be concise and clear, without any unnecessary information or repetition
+                - Keep the same tone and style as the original query
+                - DONT EVER ANSWER the Original query, but instead focus on rephrasing and expanding it into a new query
+                - Return the output as plain text, without any additional formatting
+
+                Return ONLY the rewritten query text, without any additional formatting or explanations.
+
+                Conversation History:
+                ```
+                {context}
+                ```
+
+                Original query: 
+                ```
+                {user_query}
+                ```
+
+                Rewritten query: """
+            ),
+        ])
+
+
+    chain = prompt | llm
+    ai_msg = chain.invoke(
+        {
+            "context": context,
+            "user_query": user_query,
+        }
+    )   
+    print(ai_msg)
+
+    rewritten_query = ai_msg.content.strip()
+
+    return rewritten_query
 
 # Function to handle the user input submission
-def chat(user_input, model, top_k, conversation_history):
-    system_message = "You are a helpful assistant that is an expert at extracting the most useful information from a given text. Also bring in extra relevant information to the user query from outside the given context."
-
-    conversation_history.append({"role": "user", "content": user_input})
-
+def chat(user_query, llm, top_k, conversation_history):
+    system_message = "You are a helpful assistant specialized answering user query using external context. Your task is to provide accurate and relevant answers to the user's query based solely on the provided context."
+   
+    # Rewrite the user's query based on the conversation history
     if len(conversation_history) > 1:
-        query_json = {
-            "Query": user_input,
-            "Rewritten Query": "",
-        }
-        rewritten_query_json = rewrite_query(json.dumps(query_json), conversation_history, ollama_model)
-        rewritten_query_data = json.loads(rewritten_query_json)
-        rewritten_query = rewritten_query_data["Rewritten Query"]
+        rewritten_query = rewrite_query(user_query, llm, conversation_history)
     else:
-        rewritten_query = user_input
+        rewritten_query = user_query
 
-    # Get the relevant context for the rewritten query, but don't display it
-    relevant_context = get_context(rewritten_query, vault_embeddings, vault_content)
+    # # Get the relevant context for the rewritten query, but don't display it
+    # relevant_context = get_context(rewritten_query, vault_embeddings, vault_content)
 
-    user_input_with_context = user_input
-    if relevant_context:
-        context_str = "\n".join(relevant_context)
-        user_input_with_context = user_input + "\n\nRelevant Context:\n" + context_str
+    # user_query_with_context = user_query
+    # if relevant_context:
+    #     context_str = "\n".join(relevant_context)
+    #     user_query_with_context = user_query + "\n\nRelevant Context:\n" + context_str
 
-    # Update the last user message with the relevant context retrieved 
-    conversation_history[-1]["content"] = user_input_with_context
+    # # Update the last user message with the relevant context retrieved 
+    # conversation_history[-1]["content"] = user_query_with_context
 
-    messages = [
-        {"role": "system", "content": system_message},
-        *conversation_history
-    ]
+    # messages = [
+    #     {"role": "system", "content": system_message},
+    #     *conversation_history
+    # ]
 
-    response = client.chat.completions.create(
-        model=ollama_model,
-        messages=messages,
-        max_tokens=2000,
-    )
+    # response = client.chat.completions.create(
+    #     model=ollama_model,
+    #     messages=messages,
+    #     max_tokens=2000,
+    # )
 
-    conversation_history.append({"role": "assistant", "content": response.choices[0].message.content})
+    # conversation_history.append({"role": "assistant", "content": response.choices[0].message.content})
 
-    return response.choices[0].message.content
+    # return response.choices[0].message.content
 
 
 # ---------------------------- Initialization ----------------------------
+print("Initializing...")
 
-# Configuration for the Ollama API client
-client = OpenAI(
-    base_url='http://localhost:11434/v1',
-    api_key='gemma2'
+# Initialize session state for uploaded files, model and top_k 
+if 'uploaded_files' not in st.session_state:
+    st.session_state.uploaded_files = []
+if 'model' not in st.session_state:
+    st.session_state.model = "gemma2:2b"
+if 'top_k' not in st.session_state:
+    st.session_state.top_k = 3  # Default value
+
+# Initialize Chat Ollama model
+llm = ChatOllama(
+    model = st.session_state["model"],
+    temperature = 0.8
 )
 
 # Initialize Ollama embeddings
@@ -196,17 +221,12 @@ vector_store = Chroma(
 retriever = vector_store.as_retriever()
 
 
-
 # ---------------------------- Streamlit UI ----------------------------
 st.title("Vault App")
 st.subheader("Ask questions about your documents")
 
 
 # Sidebar for uploading files
-# Initialize session state for uploaded files if not already done
-if 'uploaded_files' not in st.session_state:
-    st.session_state.uploaded_files = []
-
 st.sidebar.header("Upload a file")
 uploaded_files = st.sidebar.file_uploader("Choose a file", 
                                           type=["pdf", "txt", "json", "md"],
@@ -220,16 +240,10 @@ if uploaded_files:
             add_to_vector_store(new_file, vector_store)
         st.session_state.uploaded_files.extend(new_files)
 
-# Initialize session state for model and top_k if not already done
-if 'model' not in st.session_state:
-    st.session_state.model = "gemma2:2b"
-if 'top_k' not in st.session_state:
-    st.session_state.top_k = 3  # Default value
-
+# Sidebar for settings
 st.sidebar.header("Settings")
 st.session_state["model"] = st.sidebar.selectbox("Select Model", ["gemma2:2b"], index=0) # Model to use
 st.session_state["top_k"] = st.sidebar.slider("Top K Context", 1, 5, value=st.session_state.top_k)  # Top K context to retrieve
-
 
 # Conversation history
 if 'messages' not in st.session_state:
@@ -243,17 +257,25 @@ for message in st.session_state['messages']:
         st.chat_message("assistant").markdown(message['content'])
 
 # User input
-user_input = st.text_input("Enter your query:")
+user_query = st.text_input("Enter your query:")
 
-if user_input:
+if user_query:
+    st.session_state['messages'].append({'role': 'user', 'content': user_query})
+
+    # Rewrite the user's query based on the conversation history
+    if len(st.session_state['messages']) > 1:
+        rewritten_query = rewrite_query(user_query, llm, st.session_state['messages'])
+    else:
+        rewritten_query = user_query
+
+    st.write(rewritten_query)
     # Call the chat function with updated settings
-    response = chat(user_input = user_input, 
-                    model = st.session_state["model"], 
-                    top_k = st.session_state["top_k"], 
-                    conversation_history = st.session_state['messages'])
+    # response = chat(user_query = user_query, 
+    #                 llm = llm, 
+    #                 top_k = st.session_state["top_k"], 
+    #                 conversation_history = st.session_state['messages'])
     
-    st.session_state['messages'].append({'role': 'user', 'content': user_input})
-    st.session_state['messages'].append({'role': 'assistant', 'content': response})
+    # st.session_state['messages'].append({'role': 'assistant', 'content': response})
     
     # Show the assistant's response in the chat
-    st.chat_message("assistant").markdown(response)
+    # st.chat_message("assistant").markdown(response)
