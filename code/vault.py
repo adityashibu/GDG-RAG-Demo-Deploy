@@ -2,7 +2,6 @@ import streamlit as st
 import os
 import tempfile
 from uuid import uuid4
-
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredMarkdownLoader, JSONLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -10,18 +9,9 @@ from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-
-
-# TODO:
-# 3. Reset conversation button
-
 # ---------------------------- 1 - Data Ingestion ----------------------------
-# Function to load and chunk file into documents
-# Parameters:
-# - file: The file to upload
-# - collection: The collection to upload the file to
-# - chunk_size: The size of each chunk to upload (characters)
-# - chunk_overlap: The overlap between each chunk (characters)
+
+# Function to load the file, split it into chunks, and add them to the vector store
 def add_to_vector_store(file, vector_store, chunk_size=1000, chunk_overlap=200):
     if file:
         # Use tempfile because Langchain Loaders only accept a file_path
@@ -110,7 +100,6 @@ Rewritten query:
             ),
         ])
 
-
     chain = prompt | llm
     ai_message = chain.invoke(
         {
@@ -163,9 +152,6 @@ Context:
 Answer:
 """
 ))  
-   
-
-    
 
     print("\nMessages:", messages)
 
@@ -209,10 +195,7 @@ retriever = vector_store.as_retriever(
         search_kwargs={"k": st.session_state['top_k']}
 )
 
-
-
 # ---------------------------- Streamlit UI ----------------------------
-
 # # 1. DISPLAY CHAT MESSAGES
 st.title("Vault App")
 st.markdown("_Welcome to the Vault App! Upload a file and ask a question to retrieve relevant context from the uploaded documents._")
@@ -245,9 +228,7 @@ st.session_state["top_k"] = st.sidebar.slider("Top K Context", 1, 5, value=st.se
 if st.sidebar.button("Reset Conversation"):
     st.session_state.messages = []
 
-
 # 3. USER INPUT
-
 # When the user_query is not None, 
 if user_query := st.chat_input("Enter your message"):
     # Add user message to chat history
@@ -259,13 +240,11 @@ if user_query := st.chat_input("Enter your message"):
     
     # Display assistant response in chat message container
     with st.chat_message("assistant"):
-
         stream = chat(user_query = user_query, 
                     llm = llm, 
                     retriever = retriever,
                     conversation_history = st.session_state['messages'][:-1:])
-
-
+        
         response = st.write_stream(stream)
 
     st.session_state.messages.append({"role": "assistant", "content": response})
