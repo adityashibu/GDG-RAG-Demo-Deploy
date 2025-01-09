@@ -4,8 +4,10 @@ from openai import OpenAI
 import json
 import streamlit as st
 import chromadb
+import os
 import re
-import PyPDF2
+from langchain_community.document_loaders import PyPDFLoader, UnstructuredMarkdownLoader
+import tempfile
 
 # TODO
 # 1. Implement data loading, chunking, and uploading to chroma with langchain
@@ -15,56 +17,52 @@ import PyPDF2
 
 # ---------------------------- 1 - Data Ingestion ----------------------------
 
-# Function to split text into chunks by sentences, respecting a maximum chunk size
-def chunk(text, max_length=1000):
-    # Normalize whitespace and clean up text
-    text = re.sub(r'\s+', ' ', text).strip()
-
-    # Split text into chunks by sentences, respecting a maximum chunk size
-    sentences = re.split(r'(?<=[.!?]) +', text)
-
-    # Split the sentences into chunks
-    chunks = []
-    current_chunk = ""
-    for sentence in sentences:
-        if len(current_chunk) + len(sentence) + 1 < max_length:
-            current_chunk += (sentence + " ").strip()
-        else:
-            chunks.append(current_chunk)
-            current_chunk = sentence + " "
-    if current_chunk:
-        chunks.append(current_chunk)
-    return chunks
-
 
 # Function to upload a file to the chromadb vector database
-def upload_file(file):
+# Parameters:
+# - file: The file to upload
+# - collection: The collection to upload the file to
+# - chunk_size: The size of each chunk to upload (characters)
+# - chunk_overlap: The overlap between each chunk (characters)
+def load_file(file, collection, chunk_size=1000, chunk_overlap=100):
     if file:
         if file.type == "application/pdf":
-            pdf_reader = PyPDF2.PdfReader(file)
-            num_pages = len(pdf_reader.pages)
-            text = ''
-            
-            for page_num in range(num_pages):
-                page = pdf_reader.pages[page_num]
-                if page.extract_text():
-                    text += page.extract_text() + " "
+            # Use tempfile because Langchain PyPDFLoader only accepts a file_path
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write(file.getvalue())
+                tmp_file_path = tmp.name
+
+            pdf_reader = PyPDFLoader(file_path = tmp_file_path)
+            data = pdf_reader.load()
+
+            # Delete the temporary file
+            tmp.close()
+            os.unlink(tmp_file_path)
 
         elif file.type == "application/json":
-            data = json.load(file)  # Load JSON data from the file
-            text = json.dumps(data, ensure_ascii=False)
-        
+            data = json.load(file)
+
+        elif file.type == "text/markdown":
+            # Use tempfile because Langchain UnstructuredMarkdownLoader only accepts a file_path
+            with tempfile.NamedTemporaryFile(delete=True) as tmp:
+                tmp.write(file.getvalue())
+                tmp_file_path = tmp.name
+            
+            # Load the md file, removing its special formatting 
+            markdown_loader = UnstructuredMarkdownLoader(file_path = tmp_file_path)
+            data = markdown_loader.load()
+
+            # Delete the temporary file
+            tmp.close()
+            os.unlink(tmp_file_path)
+
+
         else:
-            text = file.read().decode("utf-8")  # Decode byte stream to string
+            # Assume the file is a text file
+            data = file.read().decode("utf-8")  
+        print("Data"":", data)
         
-        # Split text into chunks by sentences, respecting a maximum chunk size
-        chunks = chunk(text)
         
-        # Append chunks to vault.txt
-        with open("vault.txt", "a", encoding="utf-8") as vault_file:
-            for chunk in chunks:
-                vault_file.write(chunk.strip() + "\n")
-        st.success(f"{file.type.split('/')[-1].upper()} file content appended to vault.txt with each chunk on a separate line.")
 
 # ---------------------------- 2 - Query Processing ----------------------------
 
@@ -176,43 +174,58 @@ collection = chroma_client.get_or_create_collection(name="vault_collection")
 
 
 # ---------------------------- Streamlit UI ----------------------------
-st.title("Document-based Chatbot")
+st.title("Vault App")
 st.subheader("Ask questions about your documents")
 
 # Sidebar for customization
-st.sidebar.title("Vault App")
+# st.sidebar.title("Vault App")
 
 # Sidebar for uploading files
-st.sidebar.header("Upload a file to the ")
-uploaded_file = st.sidebar.file_uploader("Choose a file", type=["pdf", "txt", "json"])
+# Initialize session state for uploaded files if not already done
+if 'uploaded_files' not in st.session_state:
+    st.session_state.uploaded_files = []
+
+st.sidebar.header("Upload a file")
+uploaded_files = st.sidebar.file_uploader("Choose a file", 
+                                          type=["pdf", "txt", "json", "md"],
+                                          accept_multiple_files=True)
+
+# If files have not been loaded into the ChromaDB collection, load them
+if uploaded_files:
+    new_files = [file for file in uploaded_files if file not in st.session_state.uploaded_files]
+    if new_files:
+        for new_file in new_files:
+            load_file(new_file, collection)
+        st.session_state.uploaded_files.extend(new_files)
+
 
 # Sidebar customization
-st.sidebar.title("Settings")
+st.sidebar.header("Settings")
 model_option = st.sidebar.selectbox("Select Model", ["gemma2"], index=0)
-top_k = st.sidebar.slider("Top K Context", 1, 3, 5)  # Top K context to retrieve
+top_k = st.sidebar.slider("Top K Context", 1, 5)  # Top K context to retrieve
 
-# Default system message
-system_message = "You are a helpful assistant that is an expert at extracting the most useful information from a given text. Also bring in extra relevant information to the user query from outside the given context."
+# # Default system message
+# system_message = "You are a helpful assistant that is an expert at extracting the most useful information from a given text. Also bring in extra relevant information to the user query from outside the given context."
 
-# Conversation history
-if 'messages' not in st.session_state:
-    st.session_state['messages'] = []
+# # Conversation history
+# if 'messages' not in st.session_state:
+#     st.session_state['messages'] = []
 
-# Display chat history
-for message in st.session_state['messages']:
-    if message['role'] == 'user':
-        st.chat_message("user").markdown(message['content'])
-    else:
-        st.chat_message("assistant").markdown(message['content'])
+# # Display chat history
+# for message in st.session_state['messages']:
+#     if message['role'] == 'user':
+#         st.chat_message("user").markdown(message['content'])
+#     else:
+#         st.chat_message("assistant").markdown(message['content'])
 
-# User input
-user_input = st.text_input("Enter your query:")
+# # User input
+# user_input = st.text_input("Enter your query:")
 
-if user_input:
-    # Call the chat function with updated settings
-    response = gemma_chat(user_input, system_message, vault_embeddings_tensor, vault_content, model_option, st.session_state['messages'])
-    st.session_state['messages'].append({'role': 'user', 'content': user_input})
-    st.session_state['messages'].append({'role': 'assistant', 'content': response})
+# if user_input:
+#     # Call the chat function with updated settings
+#     response = gemma_chat(user_input, system_message, vault_embeddings_tensor, vault_content, model_option, st.session_state['messages'])
+#     st.session_state['messages'].append({'role': 'user', 'content': user_input})
+#     st.session_state['messages'].append({'role': 'assistant', 'content': response})
     
-    # Show the assistant's response in the chat
-    st.chat_message("assistant").markdown(response)
+#     # Show the assistant's response in the chat
+#     st.chat_message("assistant").markdown(response)
