@@ -81,10 +81,6 @@ def upload_jsonfile(file):
                 vault_file.write(chunk.strip() + "\n")
         st.success("JSON file content appended to vault.txt with each chunk on a separate line.")
 
-# Function to open a file and return its contents as a string
-def open_file(filepath):
-    with open(filepath, 'r', encoding='utf-8') as file:
-        return file.read()
 
 # Function to get the relevant context from the vault based on the user input
 def get_context(rewritten_input, vault_embeddings, vault_content, top_k=3):
