@@ -3,29 +3,29 @@ import ollama
 from openai import OpenAI
 import json
 import streamlit as st
-import chromadb
 import os
-import re
+import tempfile
+from uuid import uuid4
+
+
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredMarkdownLoader, JSONLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-import tempfile
+from langchain_chroma import Chroma
+from langchain_ollama import OllamaEmbeddings
+
 
 # TODO
-# 1. Implement data loading, chunking, and uploading to chroma with langchain
 # 2. Implement retrieval with langchain
-# 3. Allow the user to change the collection they are referring to
 
 
 # ---------------------------- 1 - Data Ingestion ----------------------------
-
-
 # Function to load and chunk file into documents
 # Parameters:
 # - file: The file to upload
 # - collection: The collection to upload the file to
 # - chunk_size: The size of each chunk to upload (characters)
 # - chunk_overlap: The overlap between each chunk (characters)
-def load_and_chunk(file, collection, chunk_size=1000, chunk_overlap=100):
+def add_to_vector_store(file, vector_store, chunk_size=256, chunk_overlap=100):
     if file:
         # Use tempfile because Langchain Loaders only accept a file_path
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -44,6 +44,11 @@ def load_and_chunk(file, collection, chunk_size=1000, chunk_overlap=100):
 
         data = loader.load()
 
+        # Replace temporary file name with original file name in documents' metadata
+        for document in data:
+            document.metadata["source"] = file.name
+
+        print(f"Loaded {len(data)} documents from {file.name}")
         # Use Langchain Text Splitter to chunk the document into smaller pieces
         # From LangChain Docs (https://python.langchain.com/docs/how_to/recursive_text_splitter/):
         # This text splitter is the recommended one for generic text. 
@@ -56,11 +61,18 @@ def load_and_chunk(file, collection, chunk_size=1000, chunk_overlap=100):
                                                   chunk_overlap=chunk_overlap)
         chunked_data = splitter.split_documents(data)
         
+        print(f"Chunked {file.name} into {len(chunked_data)} pieces")
+
+        # Upload the chunked data to the ChromaDB collection
+        uuids = [file.name + str(uuid4()) for _ in range(len(chunked_data))]
+        vector_store.add_documents(documents=chunked_data, ids=uuids)
+
+        print(f"Uploaded {file.name} to ChromaDB")
+        
         # Delete the temporary file
         tmp.close()
         os.unlink(tmp_file_path)
 
-        return chunked_data
     
 
     
@@ -170,17 +182,24 @@ client = OpenAI(
     api_key='gemma2'
 )
 
-# Initialize the chromadb client and collection
-chroma_client = chromadb.PersistentClient(path="chroma-data")
-collection = chroma_client.get_or_create_collection(name="vault_collection")
+# Initialize Ollama embeddings
+embeddings = OllamaEmbeddings(
+    model="nomic-embed-text",
+)
+
+# Initialize chromadb 
+vector_store = Chroma(
+    collection_name="vault",
+    embedding_function=embeddings,
+    persist_directory="./chroma_langchain_db",
+)
+
 
 
 # ---------------------------- Streamlit UI ----------------------------
 st.title("Vault App")
 st.subheader("Ask questions about your documents")
 
-# Sidebar for customization
-# st.sidebar.title("Vault App")
 
 # Sidebar for uploading files
 # Initialize session state for uploaded files if not already done
@@ -197,7 +216,7 @@ if uploaded_files:
     new_files = [file for file in uploaded_files if file not in st.session_state.uploaded_files]
     if new_files:
         for new_file in new_files:
-            load_and_chunk(new_file, collection)
+            add_to_vector_store(new_file, vector_store)
         st.session_state.uploaded_files.extend(new_files)
 
 
