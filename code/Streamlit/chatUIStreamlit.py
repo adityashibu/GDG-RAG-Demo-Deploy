@@ -1,12 +1,13 @@
 import torch
 import ollama
-import os
 from openai import OpenAI
 import json
 import streamlit as st
-
+import chromadb
 import re
 import PyPDF2
+
+# ---------------------------- 1 - Data Ingestion ----------------------------
 
 # Function to split text into chunks by sentences, respecting a maximum chunk size
 def chunk(text, max_length=1000):
@@ -81,6 +82,8 @@ def upload_jsonfile(file):
                 vault_file.write(chunk.strip() + "\n")
         st.success("JSON file content appended to vault.txt with each chunk on a separate line.")
 
+
+# ---------------------------- 2 - Query Processing ----------------------------
 
 # Function to get the relevant context from the vault based on the user input
 def get_context(rewritten_input, vault_embeddings, vault_content, top_k=3):
@@ -175,28 +178,23 @@ def gemma_chat(user_input, system_message, vault_embeddings, vault_content, olla
 
     return response.choices[0].message.content
 
+
+
+# ---------------------------- Initialization ----------------------------
+
 # Configuration for the Ollama API client
 client = OpenAI(
     base_url='http://localhost:11434/v1',
     api_key='gemma2'
 )
 
-# Load the vault content
-vault_content = []
-if os.path.exists("vault.txt"):
-    with open("vault.txt", "r", encoding='utf-8') as vault_file:
-        vault_content = vault_file.readlines()
+# Initialize the chromadb client and collection
+chroma_client = chromadb.PersistentClient(path="chroma-data")
+collection = chroma_client.get_or_create_collection(name="vault_collection")
 
-# Generate embeddings for the vault content using Ollama
-vault_embeddings = []
-for content in vault_content:
-    response = ollama.embeddings(model='nomic-embed-text', prompt=content)
-    vault_embeddings.append(response["embedding"])
 
-# Convert to tensor
-vault_embeddings_tensor = torch.tensor(vault_embeddings)
 
-# Streamlit UI
+# ---------------------------- Streamlit UI ----------------------------
 st.title("Document-based Chatbot")
 st.subheader("Ask questions about your documents")
 
@@ -224,7 +222,7 @@ if json_file is not None:
 # Sidebar customization
 st.sidebar.title("Settings")
 model_option = st.sidebar.selectbox("Select Model", ["gemma2"], index=0)
-top_k = st.sidebar.slider("Top K Context", 1, 5, 3)  # Top K context to retrieve
+top_k = st.sidebar.slider("Top K Context", 1, 3, 5)  # Top K context to retrieve
 
 # Default system message
 system_message = "You are a helpful assistant that is an expert at extracting the most useful information from a given text. Also bring in extra relevant information to the user query from outside the given context."
