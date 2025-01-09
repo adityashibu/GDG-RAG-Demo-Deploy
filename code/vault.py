@@ -15,6 +15,9 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, trim
 
 # TODO:
 # 3. Reset conversation button
+# FIX:
+# Trimmed messages are not right
+# Top K is 20 
 
 # ---------------------------- 1 - Data Ingestion ----------------------------
 # Function to load and chunk file into documents
@@ -225,9 +228,9 @@ retriever = vector_store.as_retriever(
 
 # ---------------------------- Streamlit UI ----------------------------
 
-# 1. DISPLAY CHAT MESSAGES
+# # 1. DISPLAY CHAT MESSAGES
 st.title("Vault App")
-st.subheader("Ask questions about your documents")
+st.markdown("_Welcome to the Vault App! Upload a file and ask a question to retrieve relevant context from the uploaded documents._")
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -254,11 +257,10 @@ st.session_state["model"] = st.sidebar.selectbox("Select Model", ["gemma2:2b"], 
 st.session_state["top_k"] = st.sidebar.slider("Top K Context", 1, 5, value=st.session_state.top_k)  # Top K context to retrieve
 
 
-
 # 3. USER INPUT
 
 # When the user_query is not None, 
-if user_query := st.text_input("Enter your message"):
+if user_query := st.chat_input("Enter your message"):
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": user_query})
 
@@ -278,3 +280,7 @@ if user_query := st.text_input("Enter your message"):
         response = st.write_stream(stream)
 
     st.session_state.messages.append({"role": "assistant", "content": response})
+
+
+
+
