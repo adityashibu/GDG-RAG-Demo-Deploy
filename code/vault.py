@@ -248,7 +248,3 @@ if user_query := st.chat_input("Enter your message"):
         response = st.write_stream(stream)
 
     st.session_state.messages.append({"role": "assistant", "content": response})
-
-
-
-
