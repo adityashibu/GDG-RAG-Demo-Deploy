@@ -7,6 +7,12 @@ import chromadb
 import re
 import PyPDF2
 
+# TODO
+# 1. Implement data loading, chunking, and uploading to chroma with langchain
+# 2. Implement retrieval with langchain
+# 3. Allow the user to change the collection they are referring to
+
+
 # ---------------------------- 1 - Data Ingestion ----------------------------
 
 # Function to split text into chunks by sentences, respecting a maximum chunk size
@@ -30,17 +36,26 @@ def chunk(text, max_length=1000):
         chunks.append(current_chunk)
     return chunks
 
-# Function to convert PDF to text and append to vault.txt
-def convert_pdf_to_text(file):
+
+# Function to upload a file to the chromadb vector database
+def upload_file(file):
     if file:
-        pdf_reader = PyPDF2.PdfReader(file)
-        num_pages = len(pdf_reader.pages)
-        text = ''
+        if file.type == "application/pdf":
+            pdf_reader = PyPDF2.PdfReader(file)
+            num_pages = len(pdf_reader.pages)
+            text = ''
+            
+            for page_num in range(num_pages):
+                page = pdf_reader.pages[page_num]
+                if page.extract_text():
+                    text += page.extract_text() + " "
+
+        elif file.type == "application/json":
+            data = json.load(file)  # Load JSON data from the file
+            text = json.dumps(data, ensure_ascii=False)
         
-        for page_num in range(num_pages):
-            page = pdf_reader.pages[page_num]
-            if page.extract_text():
-                text += page.extract_text() + " "
+        else:
+            text = file.read().decode("utf-8")  # Decode byte stream to string
         
         # Split text into chunks by sentences, respecting a maximum chunk size
         chunks = chunk(text)
@@ -49,39 +64,7 @@ def convert_pdf_to_text(file):
         with open("vault.txt", "a", encoding="utf-8") as vault_file:
             for chunk in chunks:
                 vault_file.write(chunk.strip() + "\n")
-        st.success("PDF content appended to vault.txt with each chunk on a separate line.")
-
-# Function to upload and process a text file
-def upload_txtfile(file):
-    if file:
-        text = file.read().decode("utf-8")  # Decode byte stream to string
-        
-        # Split text into chunks by sentences, respecting a maximum chunk size
-        chunks = chunk(text)
-        
-        # Append chunks to vault.txt
-        with open("vault.txt", "a", encoding="utf-8") as vault_file:
-            for chunk in chunks:
-                vault_file.write(chunk.strip() + "\n")
-        st.success("Text file content appended to vault.txt with each chunk on a separate line.")
-
-# Function to upload and process a JSON file
-def upload_jsonfile(file):
-    if file:
-        data = json.load(file)  # Load JSON data from the file
-        
-        # Flatten the JSON data into a single string
-        text = json.dumps(data, ensure_ascii=False)
-        
-        # Split text into chunks by sentences, respecting a maximum chunk size
-        chunks = chunk(text)
-        
-        # Append chunks to vault.txt
-        with open("vault.txt", "a", encoding="utf-8") as vault_file:
-            for chunk in chunks:
-                vault_file.write(chunk.strip() + "\n")
-        st.success("JSON file content appended to vault.txt with each chunk on a separate line.")
-
+        st.success(f"{file.type.split('/')[-1].upper()} file content appended to vault.txt with each chunk on a separate line.")
 
 # ---------------------------- 2 - Query Processing ----------------------------
 
@@ -179,7 +162,6 @@ def gemma_chat(user_input, system_message, vault_embeddings, vault_content, olla
     return response.choices[0].message.content
 
 
-
 # ---------------------------- Initialization ----------------------------
 
 # Configuration for the Ollama API client
@@ -193,31 +175,16 @@ chroma_client = chromadb.PersistentClient(path="chroma-data")
 collection = chroma_client.get_or_create_collection(name="vault_collection")
 
 
-
 # ---------------------------- Streamlit UI ----------------------------
 st.title("Document-based Chatbot")
 st.subheader("Ask questions about your documents")
 
 # Sidebar for customization
-st.sidebar.title("Vault App: PDF, Text, and JSON File Processor")
+st.sidebar.title("Vault App")
 
-# PDF to vault.txt section in the sidebar
-st.sidebar.header("Upload a PDF file to append content to vault.txt")
-pdf_file = st.sidebar.file_uploader("Choose a PDF file", type="pdf")
-if pdf_file is not None:
-    convert_pdf_to_text(pdf_file)
-
-# Text to vault.txt section in the sidebar
-st.sidebar.header("Upload a Text file to append content to vault.txt")
-txt_file = st.sidebar.file_uploader("Choose a Text file", type="txt")
-if txt_file is not None:
-    upload_txtfile(txt_file)
-
-# JSON to vault.txt section in the sidebar
-st.sidebar.header("Upload a JSON file to append content to vault.txt")
-json_file = st.sidebar.file_uploader("Choose a JSON file", type="json")
-if json_file is not None:
-    upload_jsonfile(json_file)
+# Sidebar for uploading files
+st.sidebar.header("Upload a file to the ")
+uploaded_file = st.sidebar.file_uploader("Choose a file", type=["pdf", "txt", "json"])
 
 # Sidebar customization
 st.sidebar.title("Settings")
