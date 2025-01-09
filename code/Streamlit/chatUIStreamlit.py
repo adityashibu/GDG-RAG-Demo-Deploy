@@ -14,10 +14,6 @@ from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 
 
-# TODO
-# 2. Implement retrieval with langchain
-
-
 # ---------------------------- 1 - Data Ingestion ----------------------------
 # Function to load and chunk file into documents
 # Parameters:
@@ -133,7 +129,9 @@ def rewrite_query(user_input_json, conversation_history, ollama_model):
     return json.dumps({"Rewritten Query": rewritten_query})
 
 # Function to handle the user input submission
-def gemma_chat(user_input, system_message, vault_embeddings, vault_content, ollama_model, conversation_history):
+def chat(user_input, model, top_k, conversation_history):
+    system_message = "You are a helpful assistant that is an expert at extracting the most useful information from a given text. Also bring in extra relevant information to the user query from outside the given context."
+
     conversation_history.append({"role": "user", "content": user_input})
 
     if len(conversation_history) > 1:
@@ -194,6 +192,9 @@ vector_store = Chroma(
     persist_directory="./chroma_langchain_db",
 )
 
+# Use the vectorstore as a retriever
+retriever = vector_store.as_retriever()
+
 
 
 # ---------------------------- Streamlit UI ----------------------------
@@ -219,14 +220,16 @@ if uploaded_files:
             add_to_vector_store(new_file, vector_store)
         st.session_state.uploaded_files.extend(new_files)
 
+# Initialize session state for model and top_k if not already done
+if 'model' not in st.session_state:
+    st.session_state.model = "gemma2:2b"
+if 'top_k' not in st.session_state:
+    st.session_state.top_k = 3  # Default value
 
-# Sidebar customization
 st.sidebar.header("Settings")
-model_option = st.sidebar.selectbox("Select Model", ["gemma2"], index=0)
-top_k = st.sidebar.slider("Top K Context", 1, 5)  # Top K context to retrieve
+st.session_state["model"] = st.sidebar.selectbox("Select Model", ["gemma2:2b"], index=0) # Model to use
+st.session_state["top_k"] = st.sidebar.slider("Top K Context", 1, 5, value=st.session_state.top_k)  # Top K context to retrieve
 
-# Default system message
-system_message = "You are a helpful assistant that is an expert at extracting the most useful information from a given text. Also bring in extra relevant information to the user query from outside the given context."
 
 # Conversation history
 if 'messages' not in st.session_state:
@@ -242,11 +245,15 @@ for message in st.session_state['messages']:
 # User input
 user_input = st.text_input("Enter your query:")
 
-# if user_input:
-#     # Call the chat function with updated settings
-#     response = gemma_chat(user_input, system_message, vault_embeddings_tensor, vault_content, model_option, st.session_state['messages'])
-#     st.session_state['messages'].append({'role': 'user', 'content': user_input})
-#     st.session_state['messages'].append({'role': 'assistant', 'content': response})
+if user_input:
+    # Call the chat function with updated settings
+    response = chat(user_input = user_input, 
+                    model = st.session_state["model"], 
+                    top_k = st.session_state["top_k"], 
+                    conversation_history = st.session_state['messages'])
     
-#     # Show the assistant's response in the chat
-#     st.chat_message("assistant").markdown(response)
+    st.session_state['messages'].append({'role': 'user', 'content': user_input})
+    st.session_state['messages'].append({'role': 'assistant', 'content': response})
+    
+    # Show the assistant's response in the chat
+    st.chat_message("assistant").markdown(response)
