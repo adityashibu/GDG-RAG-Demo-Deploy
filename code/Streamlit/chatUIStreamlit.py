@@ -6,7 +6,8 @@ import streamlit as st
 import chromadb
 import os
 import re
-from langchain_community.document_loaders import PyPDFLoader, UnstructuredMarkdownLoader
+from langchain_community.document_loaders import PyPDFLoader, UnstructuredMarkdownLoader, JSONLoader, TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 import tempfile
 
 # TODO
@@ -18,50 +19,51 @@ import tempfile
 # ---------------------------- 1 - Data Ingestion ----------------------------
 
 
-# Function to upload a file to the chromadb vector database
+# Function to load and chunk file into documents
 # Parameters:
 # - file: The file to upload
 # - collection: The collection to upload the file to
 # - chunk_size: The size of each chunk to upload (characters)
 # - chunk_overlap: The overlap between each chunk (characters)
-def load_file(file, collection, chunk_size=1000, chunk_overlap=100):
+def load_and_chunk(file, collection, chunk_size=1000, chunk_overlap=100):
     if file:
+        # Use tempfile because Langchain Loaders only accept a file_path
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(file.getvalue())
+            tmp_file_path = tmp.name
+
+        # Use Langchain Loaders to load the file into a Document object (which stores page content and metadata)
         if file.type == "application/pdf":
-            # Use tempfile because Langchain PyPDFLoader only accepts a file_path
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                tmp.write(file.getvalue())
-                tmp_file_path = tmp.name
-
-            pdf_reader = PyPDFLoader(file_path = tmp_file_path)
-            data = pdf_reader.load()
-
-            # Delete the temporary file
-            tmp.close()
-            os.unlink(tmp_file_path)
-
+            loader = PyPDFLoader(file_path = tmp_file_path)
         elif file.type == "application/json":
-            data = json.load(file)
-
+            loader = JSONLoader(file_path = tmp_file_path, jq_schema=".", text_content=False)
         elif file.type == "text/markdown":
-            # Use tempfile because Langchain UnstructuredMarkdownLoader only accepts a file_path
-            with tempfile.NamedTemporaryFile(delete=True) as tmp:
-                tmp.write(file.getvalue())
-                tmp_file_path = tmp.name
-            
-            # Load the md file, removing its special formatting 
-            markdown_loader = UnstructuredMarkdownLoader(file_path = tmp_file_path)
-            data = markdown_loader.load()
-
-            # Delete the temporary file
-            tmp.close()
-            os.unlink(tmp_file_path)
-
-
+            loader = UnstructuredMarkdownLoader(file_path = tmp_file_path)        
         else:
-            # Assume the file is a text file
-            data = file.read().decode("utf-8")  
-        print("Data"":", data)
+            loader = TextLoader(file_path = tmp_file_path)
+
+        data = loader.load()
+
+        # Use Langchain Text Splitter to chunk the document into smaller pieces
+        # From LangChain Docs (https://python.langchain.com/docs/how_to/recursive_text_splitter/):
+        # This text splitter is the recommended one for generic text. 
+        # It is parameterized by a list of characters. It tries to split on them in order until 
+        # the chunks are small enough. The default list is ["\n\n", "\n", " ", ""]. 
+        # This has the effect of trying to keep all paragraphs (and then sentences, and then words) 
+        # together as long as possible, as those would generically seem to be the strongest semantically 
+        # related pieces of text.
+        splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, 
+                                                  chunk_overlap=chunk_overlap)
+        chunked_data = splitter.split_documents(data)
         
+        # Delete the temporary file
+        tmp.close()
+        os.unlink(tmp_file_path)
+
+        return chunked_data
+    
+
+    
         
 
 # ---------------------------- 2 - Query Processing ----------------------------
@@ -195,7 +197,7 @@ if uploaded_files:
     new_files = [file for file in uploaded_files if file not in st.session_state.uploaded_files]
     if new_files:
         for new_file in new_files:
-            load_file(new_file, collection)
+            load_and_chunk(new_file, collection)
         st.session_state.uploaded_files.extend(new_files)
 
 
@@ -204,22 +206,22 @@ st.sidebar.header("Settings")
 model_option = st.sidebar.selectbox("Select Model", ["gemma2"], index=0)
 top_k = st.sidebar.slider("Top K Context", 1, 5)  # Top K context to retrieve
 
-# # Default system message
-# system_message = "You are a helpful assistant that is an expert at extracting the most useful information from a given text. Also bring in extra relevant information to the user query from outside the given context."
+# Default system message
+system_message = "You are a helpful assistant that is an expert at extracting the most useful information from a given text. Also bring in extra relevant information to the user query from outside the given context."
 
-# # Conversation history
-# if 'messages' not in st.session_state:
-#     st.session_state['messages'] = []
+# Conversation history
+if 'messages' not in st.session_state:
+    st.session_state['messages'] = []
 
-# # Display chat history
-# for message in st.session_state['messages']:
-#     if message['role'] == 'user':
-#         st.chat_message("user").markdown(message['content'])
-#     else:
-#         st.chat_message("assistant").markdown(message['content'])
+# Display chat history
+for message in st.session_state['messages']:
+    if message['role'] == 'user':
+        st.chat_message("user").markdown(message['content'])
+    else:
+        st.chat_message("assistant").markdown(message['content'])
 
-# # User input
-# user_input = st.text_input("Enter your query:")
+# User input
+user_input = st.text_input("Enter your query:")
 
 # if user_input:
 #     # Call the chat function with updated settings
