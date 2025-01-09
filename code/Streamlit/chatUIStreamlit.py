@@ -248,25 +248,33 @@ top_k = st.sidebar.slider("Top K Context", 1, 5, 3)  # Top K context to retrieve
 # Default system message
 system_message = "You are a helpful assistant that is an expert at extracting the most useful information from a given text. Also bring in extra relevant information to the user query from outside the given context."
 
-# Conversation history
-if 'messages' not in st.session_state:
-    st.session_state['messages'] = []
-
-# Display chat history
-for message in st.session_state['messages']:
-    if message['role'] == 'user':
-        st.chat_message("user").markdown(message['content'])
-    else:
-        st.chat_message("assistant").markdown(message['content'])
-
 # User input
 user_input = st.text_input("Enter your query:")
 
+# Process and display response if the user submits a query
 if user_input:
-    # Call the chat function with updated settings
-    response = gemma_chat(user_input, system_message, vault_embeddings_tensor, vault_content, model_option, st.session_state['messages'])
-    st.session_state['messages'].append({'role': 'user', 'content': user_input})
-    st.session_state['messages'].append({'role': 'assistant', 'content': response})
+    response = gemma_chat(
+        user_input=user_input,
+        system_message=system_message,
+        vault_embeddings=vault_embeddings_tensor,
+        vault_content=vault_content,
+        ollama_model=model_option,
+        conversation_history=[]
+    )
     
-    # Show the assistant's response in the chat
-    st.chat_message("assistant").markdown(response)
+    # Display the response with a bot icon
+    bot_icon = "https://cdn-icons-png.flaticon.com/512/4712/4712108.png"
+    st.markdown("### Response")
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: flex-start; margin-top: 10px;">
+            <div style="width: 40px; height: 40px; background-color: #fff; display: flex; justify-content: center; align-items: center; border-radius: 5px; margin-right: 10px;">
+                <img src="{bot_icon}" alt="Bot Icon" style="width: 20px; height: 20px;">
+            </div>
+            <div style="background-color: #262730; border-radius: 10px; padding: 10px; flex: 1; box-shadow: 0px 2px 5px rgba(0,0,0,0.1);">
+                {response}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
