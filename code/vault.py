@@ -9,11 +9,11 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, trim_messages
+
 
 
 # TODO:
-# 1. Conversation history up till context limit
-# 2. Update UI for streamable interface
 # 3. Reset conversation button
 
 # ---------------------------- 1 - Data Ingestion ----------------------------
@@ -89,43 +89,44 @@ def rewrite_query(user_query, llm, conversation_history):
             ),
             (
                 "human", 
-             """Rewrite the following user query by incorporating relevant context from the last two messages of the conversation history.
-                The rewritten query should:
+"""Rewrite the following user query by incorporating relevant context from the last two messages of the conversation history.
+The rewritten query should:
 
-                - Preserve the core intent and meaning of the original query
-                - Expand and clarify the query to make it more specific and informative for retrieving relevant context
-                - Avoid introducing new topics or queries that deviate from the original query
-                - Be concise and clear, without any unnecessary information or repetition
-                - Keep the same tone and style as the original query
-                - DONT EVER ANSWER the Original query, but instead focus on rephrasing and expanding it into a new query
-                - Return the output as plain text, without any additional formatting
+- Preserve the core intent and meaning of the original query
+- Expand and clarify the query to make it more specific and informative for retrieving relevant context
+- Avoid introducing new topics or queries that deviate from the original query
+- Be concise and clear, without any unnecessary information or repetition
+- Keep the same tone and style as the original query
+- DONT EVER ANSWER the Original query, but instead focus on rephrasing and expanding it into a new query
+- Return the output as plain text, without any additional formatting
 
-                Return ONLY the rewritten query text, without any additional formatting or explanations.
+Return ONLY the rewritten query text, without any additional formatting or explanations.
 
-                Conversation History:
-                ```
-                {context}
-                ```
+Conversation History:
+```
+{context}
+```
 
-                Original query: 
-                ```
-                {user_query}
-                ```
+Original query: 
+```
+{user_query}
+```
 
-                Rewritten query: """
+Rewritten query:
+"""
             ),
         ])
 
 
     chain = prompt | llm
-    ai_msg = chain.invoke(
+    ai_message = chain.invoke(
         {
             "context": context,
             "user_query": user_query,
         }
     )   
 
-    rewritten_query = ai_msg.content.strip()
+    rewritten_query = ai_message.content.strip()
 
     print("Original query:", user_query)
     print("Rewritten query:", rewritten_query)
@@ -144,46 +145,45 @@ def chat(user_query, llm, retriever, conversation_history):
     retrieved_documents = retriever.invoke(rewritten_query)
 
     # Extract the text content of the retrieved documents
-    context = "\n\n".join([doc.content for doc in retrieved_documents])
+    context = "\n\n".join([doc.page_content for doc in retrieved_documents])
 
-    # Generate a prompt for the language model to answer the user's question
-    prompt = ChatPromptTemplate.from_messages(
-        [   
-            # System prompt from LangChain
-            (
-                "system",
-                "Answer the following user query using the retrieved context. Provide a concise and informative answer that directly addresses the user's question. Use a maximum of three sentences to answer the question.",
-            ),
-            
-            (
-                "human", 
-                """Question: 
-                ```
-                {query}
-                ```
+    print("Retrieved context:", context)
 
-                Context:
-                ```
-                {context}
-                ```
+    # Create a list of LangChain messages from the conversation history and user query 
+    messages = [HumanMessage(msg['content']) if msg['role'] == 'user' else AIMessage(msg['content']) for msg in conversation_history]
+    messages.insert(0, SystemMessage("Answer the following user query using the retrieved context. Provide a concise and informative answer that directly addresses the user's question. Use a maximum of three sentences to answer the question."))
+    messages.append(HumanMessage(f"""Question: 
+```
+{user_query}
+```
 
-                Answer:
-                """
-            ),
-        ]
+Context:
+```
+{context}
+```
+
+Answer:
+"""
+))
+    # Trimmer to the messages to meet the maximum token limit 
+    trimmed_messages = trim_messages(
+        messages,
+        strategy="last", # Keep the last <= n_count tokens of the messages.
+        token_counter = llm, # Token counter for the messages (using the llm's ).
+        max_tokens = 1500, # Maximum number of tokens to keep in the messages. (Default context limit is 2048 tokens. Leaving ~500 tokens for output)
+        start_on = "system",
+        end_on=("human"),
+        # Usually, we want to keep the SystemMessage
+        # if it's present in the original history.
+        # The SystemMessage has special instructions for the model.
+        include_system=True,
+        allow_partial=False,
     )
 
-    # Chain the prompt and language model together
-    chain = prompt | llm
-    ai_msg = chain.invoke(
-        {
-            "context": context,
-            "user_query": user_query,
-        }
-    )   
-    response = ai_msg.content.strip()
+    print("Trimmed messages:", trimmed_messages)
 
-    return response
+    # Generate the response from the model
+    return llm.stream(trimmed_messages)
 
 # ---------------------------- Initialization ----------------------------
 print("Initializing...")
@@ -224,11 +224,17 @@ retriever = vector_store.as_retriever(
 
 
 # ---------------------------- Streamlit UI ----------------------------
+
+# 1. DISPLAY CHAT MESSAGES
 st.title("Vault App")
 st.subheader("Ask questions about your documents")
 
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-# Sidebar for uploading files
+# 2. SIDEBAR
+# Uploading files
 st.sidebar.header("Upload a file")
 uploaded_files = st.sidebar.file_uploader("Choose a file", 
                                           type=["pdf", "txt", "json", "md"],
@@ -242,31 +248,33 @@ if uploaded_files:
             add_to_vector_store(new_file, vector_store)
         st.session_state.uploaded_files.extend(new_files)
 
-# Sidebar for settings
+# Settings
 st.sidebar.header("Settings")
 st.session_state["model"] = st.sidebar.selectbox("Select Model", ["gemma2:2b"], index=0) # Model to use
 st.session_state["top_k"] = st.sidebar.slider("Top K Context", 1, 5, value=st.session_state.top_k)  # Top K context to retrieve
 
 
-# Display chat history
-for message in st.session_state['messages']:
-    if message['role'] == 'user':
-        st.chat_message("user").markdown(message['content'])
-    else:
-        st.chat_message("assistant").markdown(message['content'])
 
-# User input
-user_query = st.text_input("Enter your query:")
+# 3. USER INPUT
 
-if user_query:
-    # Call the chat function with updated settings
-    response = chat(user_query = user_query, 
+# When the user_query is not None, 
+if user_query := st.text_input("Enter your message"):
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": user_query})
+
+    # Display user message in chat message container
+    with st.chat_message("user"):
+        st.markdown(user_query)
+    
+    # Display assistant response in chat message container
+    with st.chat_message("assistant"):
+
+        stream = chat(user_query = user_query, 
                     llm = llm, 
                     retriever = retriever,
                     conversation_history = st.session_state['messages'])
-    
-    st.session_state['messages'].append({'role': 'user', 'content': user_query})
-    st.session_state['messages'].append({'role': 'assistant', 'content': response})
-    
-    # Show the assistant's response in the chat
-    st.chat_message("assistant").markdown(response)
+
+
+        response = st.write_stream(stream)
+
+    st.session_state.messages.append({"role": "assistant", "content": response})
