@@ -11,7 +11,10 @@ from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 
 
-
+# TODO:
+# 1. Conversation history up till context limit
+# 2. Update UI for streamable interface
+# 3. Reset conversation button
 
 # ---------------------------- 1 - Data Ingestion ----------------------------
 # Function to load and chunk file into documents
@@ -20,7 +23,7 @@ from langchain_core.prompts import ChatPromptTemplate
 # - collection: The collection to upload the file to
 # - chunk_size: The size of each chunk to upload (characters)
 # - chunk_overlap: The overlap between each chunk (characters)
-def add_to_vector_store(file, vector_store, chunk_size=256, chunk_overlap=100):
+def add_to_vector_store(file, vector_store, chunk_size=1000, chunk_overlap=200):
     if file:
         # Use tempfile because Langchain Loaders only accept a file_path
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
@@ -53,7 +56,9 @@ def add_to_vector_store(file, vector_store, chunk_size=256, chunk_overlap=100):
         # together as long as possible, as those would generically seem to be the strongest semantically 
         # related pieces of text.
         splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, 
-                                                  chunk_overlap=chunk_overlap)
+                                                  chunk_overlap=chunk_overlap,
+                                                  add_start_index=True,  # track index in original document
+                                                )
         chunked_data = splitter.split_documents(data)
         
         print(f"Chunked {file.name} into {len(chunked_data)} pieces")
@@ -67,34 +72,8 @@ def add_to_vector_store(file, vector_store, chunk_size=256, chunk_overlap=100):
         # Delete the temporary file
         tmp.close()
         os.unlink(tmp_file_path)
-
-    
-
-    
-        
-
+  
 # ---------------------------- 2 - Query Processing ----------------------------
-
-# Function to get the relevant context from the vault based on the user input
-def get_context(query, vault_embeddings, vault_content, top_k=3):
-    if vault_embeddings.nelement() == 0:  # Check if the tensor is empty
-        return []
-
-    # Encode the rewritten input
-    input_embedding = ollama.embeddings(model='nomic-embed-text', prompt=query)["embedding"]
-
-    # Compute the similarity between input and vault embeddings
-    cos_scores = torch.cosine_similarity(torch.tensor(input_embedding).unsqueeze(0), vault_embeddings)
-    
-    # Adjust top k based to ensure it is not more than number of availabl scores
-    top_k = min(top_k, len(cos_scores))
-
-    # Sort the scores and get the top-k indices
-    top_indices = torch.topk(cos_scores, k=top_k)[1].tolist()
-
-    # Get the corresponding context from the vault
-    relevant_context = [vault_content[idx].strip() for idx in top_indices]
-    return relevant_context
 
 # Function to rewrite the user's query based on recent conversation history
 def rewrite_query(user_query, llm, conversation_history):
@@ -145,59 +124,79 @@ def rewrite_query(user_query, llm, conversation_history):
             "user_query": user_query,
         }
     )   
-    print(ai_msg)
 
     rewritten_query = ai_msg.content.strip()
+
+    print("Original query:", user_query)
+    print("Rewritten query:", rewritten_query)
 
     return rewritten_query
 
 # Function to handle the user input submission
-def chat(user_query, llm, top_k, conversation_history):
-    system_message = "You are a helpful assistant specialized answering user query using external context. Your task is to provide accurate and relevant answers to the user's query based solely on the provided context."
-   
-    # Rewrite the user's query based on the conversation history
-    if len(conversation_history) > 1:
-        rewritten_query = rewrite_query(user_query, llm, conversation_history)
+def chat(user_query, llm, retriever, conversation_history):   
+    # Query Analysis: Rewrite the user's query based on the conversation history
+    if len(st.session_state['messages']) > 1:
+        rewritten_query = rewrite_query(user_query, llm, st.session_state['messages'])
     else:
         rewritten_query = user_query
+        
+    # Retrieve relevant context for the rewritten query from the vector database
+    retrieved_documents = retriever.invoke(rewritten_query)
 
-    # # Get the relevant context for the rewritten query, but don't display it
-    # relevant_context = get_context(rewritten_query, vault_embeddings, vault_content)
+    # Extract the text content of the retrieved documents
+    context = "\n\n".join([doc.content for doc in retrieved_documents])
 
-    # user_query_with_context = user_query
-    # if relevant_context:
-    #     context_str = "\n".join(relevant_context)
-    #     user_query_with_context = user_query + "\n\nRelevant Context:\n" + context_str
+    # Generate a prompt for the language model to answer the user's question
+    prompt = ChatPromptTemplate.from_messages(
+        [   
+            # System prompt from LangChain
+            (
+                "system",
+                "Answer the following user query using the retrieved context. Provide a concise and informative answer that directly addresses the user's question. Use a maximum of three sentences to answer the question.",
+            ),
+            
+            (
+                "human", 
+                """Question: 
+                ```
+                {query}
+                ```
 
-    # # Update the last user message with the relevant context retrieved 
-    # conversation_history[-1]["content"] = user_query_with_context
+                Context:
+                ```
+                {context}
+                ```
 
-    # messages = [
-    #     {"role": "system", "content": system_message},
-    #     *conversation_history
-    # ]
+                Answer:
+                """
+            ),
+        ]
+    )
 
-    # response = client.chat.completions.create(
-    #     model=ollama_model,
-    #     messages=messages,
-    #     max_tokens=2000,
-    # )
+    # Chain the prompt and language model together
+    chain = prompt | llm
+    ai_msg = chain.invoke(
+        {
+            "context": context,
+            "user_query": user_query,
+        }
+    )   
+    response = ai_msg.content.strip()
 
-    # conversation_history.append({"role": "assistant", "content": response.choices[0].message.content})
-
-    # return response.choices[0].message.content
-
+    return response
 
 # ---------------------------- Initialization ----------------------------
 print("Initializing...")
 
-# Initialize session state for uploaded files, model and top_k 
+# Initialize session state for uploaded files, model, top_k and messages
 if 'uploaded_files' not in st.session_state:
-    st.session_state.uploaded_files = []
+    st.session_state['uploaded_files'] = []
 if 'model' not in st.session_state:
-    st.session_state.model = "gemma2:2b"
+    st.session_state['model'] = "gemma2:2b"
 if 'top_k' not in st.session_state:
-    st.session_state.top_k = 3  # Default value
+    st.session_state['top_k'] = 3  
+if 'messages' not in st.session_state:
+    st.session_state['messages'] = []
 
 # Initialize Chat Ollama model
 llm = ChatOllama(
@@ -217,8 +216,11 @@ vector_store = Chroma(
     persist_directory="./chroma_langchain_db",
 )
 
-# Use the vectorstore as a retriever
-retriever = vector_store.as_retriever()
+# Use the vector store as a retriever
+retriever = vector_store.as_retriever(
+        search_type="mmr", 
+        search_kwargs={"k": st.session_state['top_k']}
+)
 
 
 # ---------------------------- Streamlit UI ----------------------------
@@ -245,9 +247,6 @@ st.sidebar.header("Settings")
 st.session_state["model"] = st.sidebar.selectbox("Select Model", ["gemma2:2b"], index=0) # Model to use
 st.session_state["top_k"] = st.sidebar.slider("Top K Context", 1, 5, value=st.session_state.top_k)  # Top K context to retrieve
 
-# Conversation history
-if 'messages' not in st.session_state:
-    st.session_state['messages'] = []
 
 # Display chat history
 for message in st.session_state['messages']:
@@ -260,22 +259,14 @@ for message in st.session_state['messages']:
 user_query = st.text_input("Enter your query:")
 
 if user_query:
-    st.session_state['messages'].append({'role': 'user', 'content': user_query})
-
-    # Rewrite the user's query based on the conversation history
-    if len(st.session_state['messages']) > 1:
-        rewritten_query = rewrite_query(user_query, llm, st.session_state['messages'])
-    else:
-        rewritten_query = user_query
-
-    st.write(rewritten_query)
     # Call the chat function with updated settings
-    # response = chat(user_query = user_query, 
-    #                 llm = llm, 
-    #                 top_k = st.session_state["top_k"], 
-    #                 conversation_history = st.session_state['messages'])
+    response = chat(user_query = user_query, 
+                    llm = llm, 
+                    retriever = retriever,
+                    conversation_history = st.session_state['messages'])
     
-    # st.session_state['messages'].append({'role': 'assistant', 'content': response})
+    st.session_state['messages'].append({'role': 'user', 'content': user_query})
+    st.session_state['messages'].append({'role': 'assistant', 'content': response})
     
     # Show the assistant's response in the chat
-    # st.chat_message("assistant").markdown(response)
+    st.chat_message("assistant").markdown(response)
