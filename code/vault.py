@@ -3,21 +3,17 @@ import os
 import tempfile
 from uuid import uuid4
 
-
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredMarkdownLoader, JSONLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings, ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, trim_messages
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 
 
 # TODO:
 # 3. Reset conversation button
-# FIX:
-# Trimmed messages are not right
-# Top K is 20 
 
 # ---------------------------- 1 - Data Ingestion ----------------------------
 # Function to load and chunk file into documents
@@ -85,14 +81,8 @@ def rewrite_query(user_query, llm, conversation_history):
     context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-2:]])
 
     prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                "You are a helpful assistant that rewrites user query.",
-            ),
-            (
-                "human", 
-"""Rewrite the following user query by incorporating relevant context from the last two messages of the conversation history.
+        [("system","You are a helpful assistant that rewrites user query."),
+        ("human", """Rewrite the following user query by incorporating relevant context from the last two messages of the conversation history.
 The rewritten query should:
 
 - Preserve the core intent and meaning of the original query
@@ -138,22 +128,27 @@ Rewritten query:
 
 # Function to handle the user input submission
 def chat(user_query, llm, retriever, conversation_history):   
-    # Query Analysis: Rewrite the user's query based on the conversation history
-    if len(st.session_state['messages']) > 1:
-        rewritten_query = rewrite_query(user_query, llm, st.session_state['messages'])
+    # Rewrite the user's query based on the conversation history
+    if len(conversation_history) > 1:
+        rewritten_query = rewrite_query(user_query, llm, conversation_history)
     else:
         rewritten_query = user_query
         
     # Retrieve relevant context for the rewritten query from the vector database
     retrieved_documents = retriever.invoke(rewritten_query)
 
+    print("Number of retrieved documents:", len(retrieved_documents))
+
     # Extract the text content of the retrieved documents
     context = "\n\n".join([doc.page_content for doc in retrieved_documents])
 
-    print("Retrieved context:", context)
+    print("\n Retrieved context: ```", context, "```")
 
-    # Create a list of LangChain messages from the conversation history and user query 
-    messages = [HumanMessage(msg['content']) if msg['role'] == 'user' else AIMessage(msg['content']) for msg in conversation_history]
+    # Create a list of LangChain messages from the conversation history (limit to last 4 messages - starts with human message, ends with AI message)
+    messages = [HumanMessage(msg['content']) if msg['role'] == 'user' else AIMessage(msg['content']) for msg in conversation_history[-4:]]
+    
+    
+    # Add system message and human message 
     messages.insert(0, SystemMessage("Answer the following user query using the retrieved context. Provide a concise and informative answer that directly addresses the user's question. Use a maximum of three sentences to answer the question."))
     messages.append(HumanMessage(f"""Question: 
 ```
@@ -167,26 +162,15 @@ Context:
 
 Answer:
 """
-))
-    # Trimmer to the messages to meet the maximum token limit 
-    trimmed_messages = trim_messages(
-        messages,
-        strategy="last", # Keep the last <= n_count tokens of the messages.
-        token_counter = llm, # Token counter for the messages (using the llm's ).
-        max_tokens = 1500, # Maximum number of tokens to keep in the messages. (Default context limit is 2048 tokens. Leaving ~500 tokens for output)
-        start_on = "system",
-        end_on=("human"),
-        # Usually, we want to keep the SystemMessage
-        # if it's present in the original history.
-        # The SystemMessage has special instructions for the model.
-        include_system=True,
-        allow_partial=False,
-    )
+))  
+   
 
-    print("Trimmed messages:", trimmed_messages)
+    
+
+    print("\nMessages:", messages)
 
     # Generate the response from the model
-    return llm.stream(trimmed_messages)
+    return llm.stream(messages)
 
 # ---------------------------- Initialization ----------------------------
 print("Initializing...")
@@ -226,6 +210,7 @@ retriever = vector_store.as_retriever(
 )
 
 
+
 # ---------------------------- Streamlit UI ----------------------------
 
 # # 1. DISPLAY CHAT MESSAGES
@@ -256,6 +241,10 @@ st.sidebar.header("Settings")
 st.session_state["model"] = st.sidebar.selectbox("Select Model", ["gemma2:2b"], index=0) # Model to use
 st.session_state["top_k"] = st.sidebar.slider("Top K Context", 1, 5, value=st.session_state.top_k)  # Top K context to retrieve
 
+# Toggle to reset conversation
+if st.sidebar.button("Reset Conversation"):
+    st.session_state.messages = []
+
 
 # 3. USER INPUT
 
@@ -274,7 +263,7 @@ if user_query := st.chat_input("Enter your message"):
         stream = chat(user_query = user_query, 
                     llm = llm, 
                     retriever = retriever,
-                    conversation_history = st.session_state['messages'])
+                    conversation_history = st.session_state['messages'][:-1:])
 
 
         response = st.write_stream(stream)
