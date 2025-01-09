@@ -8,6 +8,27 @@ import streamlit as st
 import re
 import PyPDF2
 
+# Function to split text into chunks by sentences, respecting a maximum chunk size
+def chunk(text, max_length=1000):
+    # Normalize whitespace and clean up text
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    # Split text into chunks by sentences, respecting a maximum chunk size
+    sentences = re.split(r'(?<=[.!?]) +', text)
+
+    # Split the sentences into chunks
+    chunks = []
+    current_chunk = ""
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) + 1 < max_length:
+            current_chunk += (sentence + " ").strip()
+        else:
+            chunks.append(current_chunk)
+            current_chunk = sentence + " "
+    if current_chunk:
+        chunks.append(current_chunk)
+    return chunks
+
 # Function to convert PDF to text and append to vault.txt
 def convert_pdf_to_text(file):
     if file:
@@ -20,21 +41,8 @@ def convert_pdf_to_text(file):
             if page.extract_text():
                 text += page.extract_text() + " "
         
-        # Normalize whitespace and clean up text
-        text = re.sub(r'\s+', ' ', text).strip()
-        
         # Split text into chunks by sentences, respecting a maximum chunk size
-        sentences = re.split(r'(?<=[.!?]) +', text)
-        chunks = []
-        current_chunk = ""
-        for sentence in sentences:
-            if len(current_chunk) + len(sentence) + 1 < 1000:
-                current_chunk += (sentence + " ").strip()
-            else:
-                chunks.append(current_chunk)
-                current_chunk = sentence + " "
-        if current_chunk:
-            chunks.append(current_chunk)
+        chunks = chunk(text)
         
         # Append chunks to vault.txt
         with open("vault.txt", "a", encoding="utf-8") as vault_file:
@@ -47,21 +55,8 @@ def upload_txtfile(file):
     if file:
         text = file.read().decode("utf-8")  # Decode byte stream to string
         
-        # Normalize whitespace and clean up text
-        text = re.sub(r'\s+', ' ', text).strip()
-        
         # Split text into chunks by sentences, respecting a maximum chunk size
-        sentences = re.split(r'(?<=[.!?]) +', text)
-        chunks = []
-        current_chunk = ""
-        for sentence in sentences:
-            if len(current_chunk) + len(sentence) + 1 < 1000:
-                current_chunk += (sentence + " ").strip()
-            else:
-                chunks.append(current_chunk)
-                current_chunk = sentence + " "
-        if current_chunk:
-            chunks.append(current_chunk)
+        chunks = chunk(text)
         
         # Append chunks to vault.txt
         with open("vault.txt", "a", encoding="utf-8") as vault_file:
@@ -77,21 +72,8 @@ def upload_jsonfile(file):
         # Flatten the JSON data into a single string
         text = json.dumps(data, ensure_ascii=False)
         
-        # Normalize whitespace and clean up text
-        text = re.sub(r'\s+', ' ', text).strip()
-        
         # Split text into chunks by sentences, respecting a maximum chunk size
-        sentences = re.split(r'(?<=[.!?]) +', text)
-        chunks = []
-        current_chunk = ""
-        for sentence in sentences:
-            if len(current_chunk) + len(sentence) + 1 < 1000:
-                current_chunk += (sentence + " ").strip()
-            else:
-                chunks.append(current_chunk)
-                current_chunk = sentence + " "
-        if current_chunk:
-            chunks.append(current_chunk)
+        chunks = chunk(text)
         
         # Append chunks to vault.txt
         with open("vault.txt", "a", encoding="utf-8") as vault_file:
