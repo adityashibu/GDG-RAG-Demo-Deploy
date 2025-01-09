@@ -44,7 +44,7 @@
   pip install -r requirements.txt
   ```
 
-- Download and install ![Ollama](https://ollama.com/download)
+- Download and install [Ollama](https://ollama.com/download)
 - Pull the required Ollama models (gemma2:2b and nomic-embed-text)
 
   ```shell
