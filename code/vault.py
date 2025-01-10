@@ -76,7 +76,6 @@ def rewrite_query(user_query, llm, conversation_history):
 The rewritten query should:
 
 - Preserve the core intent and meaning of the original query
-- Expand and clarify the query to make it more specific and informative for retrieving relevant context
 - Avoid introducing new topics or queries that deviate from the original query
 - Be concise and clear, without any unnecessary information or repetition
 - Keep the same tone and style as the original query
