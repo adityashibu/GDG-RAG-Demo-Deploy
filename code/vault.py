@@ -225,8 +225,8 @@ st.session_state["model"] = st.sidebar.selectbox("Select Model", ["gemma2:2b"], 
 st.session_state["top_k"] = st.sidebar.slider("Top K Context", 1, 5, value=st.session_state.top_k)  # Top K context to retrieve
 
 # Toggle to reset conversation
-if st.sidebar.button("Reset Conversation"):
-    st.session_state.messages = []
+st.sidebar.button("Reset Conversation", on_click= lambda: st.session_state.update(messages=[]))
+    
 
 # 3. USER INPUT
 # When the user_query is not None, 
