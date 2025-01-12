@@ -1,4 +1,8 @@
 *.ipynb_checkpoints
+
+# Virtual Environments
 *venv
+*jonathan
+
 vault.txt
 *chroma_langchain_db

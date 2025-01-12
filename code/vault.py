@@ -220,7 +220,7 @@ if uploaded_files:
 
 # Settings
 st.sidebar.header("Settings")
-st.session_state["model"] = st.sidebar.selectbox("Select Model", ["gemma2:2b"], index=0) # Model to use
+st.session_state["model"] = st.sidebar.selectbox("Select Model", ["gemma2:2b", "gemma2"], index=0) # Model to use
 st.session_state["top_k"] = st.sidebar.slider("Top K Context", 1, 5, value=st.session_state.top_k)  # Top K context to retrieve
 
 # Toggle to reset conversation
