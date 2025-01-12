@@ -201,7 +201,7 @@ retriever = vector_store.as_retriever(
 # ---------------------------- Streamlit UI ----------------------------
 # # 1. DISPLAY CHAT MESSAGES
 st.title("Vault App")
-st.markdown("_Welcome to the Vault App! Upload a file and ask a question to retrieve relevant context from the uploaded documents._")
+st.markdown("Welcome to the Vault App! Upload a file and ask a question to retrieve relevant context from the uploaded documents.")
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
